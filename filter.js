@@ -11,8 +11,8 @@ class filterSchedule {
         }
         return this.schedule.filter(event => {
             return this.groupFilters.some(filter => event.group.includes(filter));
-        }
-        );
+        });
     }
-
 }
+
+module.exports = filterSchedule;

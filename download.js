@@ -6,13 +6,17 @@ class ScheduleDownloader {
         id,
         dateFrom,
         dateTo,
-        outputPath = 'harmonogram.csv',
+        outputPath = './tmp/harmonogram.csv',
+        origUrl,
     } = {}) {
         this.sessionId = sessionId;
         this.id = id;
         this.dateFrom = dateFrom;
         this.dateTo = dateTo;
         this.outputPath = outputPath;
+        this.origUrl = origUrl;
+        this.retryLimit = 5;
+        this.retryCount = 0;
     }
 
     async downloadSchedule() {
@@ -22,7 +26,7 @@ class ScheduleDownloader {
         });
 
         const url =
-            `https://harmonogram.krakow.ideis.pl/Plany/WydrukTokuCsv/${this.id}?${params.toString()}`;
+            `${this.origUrl}${this.id}?${params.toString()}`;
 
         console.log('Downloading:');
         console.log(url);
@@ -31,7 +35,7 @@ class ScheduleDownloader {
             method: 'GET',
             headers: {
                 'Cookie': `ASP.NET_SessionId=${this.sessionId}; .culture=c=pl|uic=pl`,
-                'Referer': `https://harmonogram.krakow.ideis.pl/Plany/PlanyTokow/${this.id}`,
+                'Referer': `${this.origUrl}${this.id}`,
                 'User-Agent': 'Mozilla/5.0',
                 'Accept': '*/*',
             },
@@ -42,6 +46,16 @@ class ScheduleDownloader {
         if (!response.ok) {
             const body = await response.text();
 
+            if (response.status === 429) {
+                console.warn('Received 429 Too Many Requests. Retrying after 60 seconds...');
+                this.retryCount += 1;
+                if (this.retryCount >= this.retryLimit) {
+                    throw new Error(`Exceeded retry limit of ${this.retryLimit}.`);
+                }
+                await new Promise(resolve => setTimeout(resolve, 60000));
+                return this.downloadSchedule();
+            }
+
             throw new Error(`Request failed (HTTP ${response.status}): ${body}`);
         }
 
@@ -50,6 +64,7 @@ class ScheduleDownloader {
         fs.writeFileSync(this.outputPath, buffer);
 
         console.log(`Saved ${this.outputPath} (${buffer.length} bytes)`);
+        this.retryCount = 0; // Reset retry count on successful download
         return this.outputPath;
     }
 

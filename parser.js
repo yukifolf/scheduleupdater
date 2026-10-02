@@ -89,11 +89,11 @@ class CSVParser {
 module.exports = CSVParser;
 
 if (require.main === module) {
-    const parser = new CSVParser(process.argv[2] || './Plany.Csv');
+    const parser = new CSVParser(process.argv[2] || './tmp/Plany.Csv');
     const events = parser.parse();
 
     console.log(JSON.stringify(events, null, 2));
-    fs.writeFileSync('./schedule.json', JSON.stringify(events, null, 2), 'utf8');
+    fs.writeFileSync('./tmp/schedule.json', JSON.stringify(events, null, 2), 'utf8');
 
     console.log(`Parsed ${events.length} events.`);
     console.log('Saved to schedule.json');

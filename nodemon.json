@@ -1,0 +1,19 @@
+{
+  "watch": [
+    "main.js",
+    "download.js",
+    "parser.js",
+    "filter.js",
+    "calendar.js",
+    "config"
+  ],
+  "ext": "js,json",
+  "ignore": [
+    "**/tmp/**",
+    "**/test/**",
+    "**/tests/**",
+    "**/config/credentials.json",
+    "**/config/token.json"
+  ],
+  "signal": "SIGTERM"
+}

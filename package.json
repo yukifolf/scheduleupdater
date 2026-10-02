@@ -1,9 +1,18 @@
 {
+  "scripts": {
+    "start": "nodemon main.js",
+    "dev": "nodemon main.js",
+    "test": "jest --runInBand"
+  },
   "dependencies": {
     "@google-cloud/local-auth": "^3.0.1",
     "config": "^5.0.1",
     "csv-parser": "^3.2.1",
     "googleapis": "^182.0.0",
-    "iconv-lite": "^0.7.3"
+    "iconv-lite": "^0.7.3",
+    "nodemon": "^3.1.14"
+  },
+  "devDependencies": {
+    "jest": "^30.5.2"
   }
 }
