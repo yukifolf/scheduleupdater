@@ -6,7 +6,6 @@
   "credentialsPath": "./config/credentials.json",
   "tokenPath": "./config/token.json",
   "scheduleID": "1088",
-  "sessionId": "paste-your-aspnet-sessionid-cookie-here",
   "dateFrom": "10/01/2026 00:00:00",
   "dateTo": "02/21/2027 00:00:00",
   "url": "https://harmonogram.krakow.ideis.pl/Plany/WydrukTokuCsv/"

@@ -242,4 +242,106 @@ describe('ScheduleDownloader', () => {
 
         expect(() => downloader.checkFileSize()).toThrow(error);
     });
+
+    describe('automatic session management', () => {
+        function viewResponse(cookie = 'ASP.NET_SessionId=auto-session-123; path=/; HttpOnly') {
+            return {
+                ok: true,
+                status: 200,
+                headers: {
+                    getSetCookie: () => [cookie],
+                    get: () => cookie,
+                },
+            };
+        }
+
+        test('automatically fetches session from derived viewUrl when sessionId is not provided', async () => {
+            const { sessionId, ...withoutSession } = options;
+            const autoDownloader = new ScheduleDownloader(withoutSession);
+
+            fetchMock
+                .mockResolvedValueOnce(viewResponse('ASP.NET_SessionId=derived-session-456; path=/'))
+                .mockResolvedValueOnce(successfulResponse());
+
+            await expect(autoDownloader.downloadSchedule()).resolves.toBe(options.outputPath);
+
+            expect(fetchMock).toHaveBeenCalledTimes(2);
+            expect(fetchMock.mock.calls[0][0]).toBe('https://schedule.example/Plany/PlanyTokow/1088');
+            expect(fetchMock.mock.calls[1][1].headers.Cookie).toContain('ASP.NET_SessionId=derived-session-456');
+        });
+
+        test('uses configured viewUrl when provided', async () => {
+            const { sessionId, ...withoutSession } = options;
+            const autoDownloader = new ScheduleDownloader({
+                ...withoutSession,
+                viewUrl: 'https://custom.example/Plany/PlanyTokow/',
+            });
+
+            fetchMock
+                .mockResolvedValueOnce(viewResponse('ASP.NET_SessionId=custom-view-session'))
+                .mockResolvedValueOnce(successfulResponse());
+
+            await expect(autoDownloader.downloadSchedule()).resolves.toBe(options.outputPath);
+
+            expect(fetchMock).toHaveBeenCalledTimes(2);
+            expect(fetchMock.mock.calls[0][0]).toBe('https://custom.example/Plany/PlanyTokow/1088');
+            expect(fetchMock.mock.calls[1][1].headers.Cookie).toContain('ASP.NET_SessionId=custom-view-session');
+        });
+
+        test('rejects when viewUrl request returns an HTTP error', async () => {
+            const { sessionId, ...withoutSession } = options;
+            const autoDownloader = new ScheduleDownloader(withoutSession);
+
+            fetchMock.mockResolvedValueOnce({
+                ok: false,
+                status: 500,
+            });
+
+            await expect(autoDownloader.downloadSchedule())
+                .rejects.toThrow('Failed to obtain session from https://schedule.example/Plany/PlanyTokow/1088 (HTTP 500)');
+            expect(fetchMock).toHaveBeenCalledTimes(1);
+        });
+
+        test('rejects when ASP.NET_SessionId cookie is missing from viewUrl response', async () => {
+            const { sessionId, ...withoutSession } = options;
+            const autoDownloader = new ScheduleDownloader(withoutSession);
+
+            fetchMock.mockResolvedValueOnce({
+                ok: true,
+                status: 200,
+                headers: {
+                    getSetCookie: () => [],
+                    get: () => null,
+                },
+            });
+
+            await expect(autoDownloader.downloadSchedule())
+                .rejects.toThrow('ASP.NET_SessionId cookie not found in response from https://schedule.example/Plany/PlanyTokow/1088');
+            expect(fetchMock).toHaveBeenCalledTimes(1);
+        });
+
+        test('automatically fetches fresh session and retries if provided sessionId returns expired schedule', async () => {
+            const expiredScheduleBytes = Buffer.from(
+                'Plan dla toku: IS/WSEI N\nCzas od;Czas do;Liczba godzin;\n'
+            );
+            const expiredResponse = {
+                ok: true,
+                status: 200,
+                arrayBuffer: jest.fn().mockResolvedValue(expiredScheduleBytes.buffer),
+                text: jest.fn(),
+            };
+
+            fetchMock
+                .mockResolvedValueOnce(expiredResponse)
+                .mockResolvedValueOnce(viewResponse('ASP.NET_SessionId=refreshed-session'))
+                .mockResolvedValueOnce(successfulResponse());
+
+            await expect(downloader.downloadSchedule()).resolves.toBe(options.outputPath);
+
+            expect(fetchMock).toHaveBeenCalledTimes(3);
+            expect(fetchMock.mock.calls[0][1].headers.Cookie).toContain('ASP.NET_SessionId=test-session');
+            expect(fetchMock.mock.calls[1][0]).toBe('https://schedule.example/Plany/PlanyTokow/1088');
+            expect(fetchMock.mock.calls[2][1].headers.Cookie).toContain('ASP.NET_SessionId=refreshed-session');
+        });
+    });
 });

@@ -3,20 +3,82 @@ const fs = require('fs');
 class ScheduleDownloader {
     constructor({
         sessionId,
+        autoSession,
         id,
         dateFrom,
         dateTo,
         outputPath = './tmp/harmonogram.csv',
         origUrl,
+        viewUrl,
     } = {}) {
         this.sessionId = sessionId;
+        this.autoSession = autoSession ?? !sessionId;
         this.id = id;
         this.dateFrom = dateFrom;
         this.dateTo = dateTo;
         this.outputPath = outputPath;
         this.origUrl = origUrl;
+        this.viewUrl = viewUrl;
         this.retryLimit = 5;
         this.retryCount = 0;
+    }
+
+    getViewUrl() {
+        let base = this.viewUrl;
+        if (!base && this.origUrl) {
+            if (this.origUrl.includes('/WydrukTokuCsv')) {
+                base = this.origUrl.replace(/\/WydrukTokuCsv\/?$/, '/PlanyTokow/');
+            } else {
+                try {
+                    const parsed = new URL(this.origUrl);
+                    base = `${parsed.origin}/Plany/PlanyTokow/`;
+                } catch {
+                    base = this.origUrl;
+                }
+            }
+        }
+        if (!base) return '';
+        if (this.id && !base.endsWith(`/${this.id}`)) {
+            return base.endsWith('/') ? `${base}${this.id}` : `${base}/${this.id}`;
+        }
+        return base;
+    }
+
+    async fetchSessionId() {
+        const viewUrl = this.getViewUrl();
+        if (!viewUrl) {
+            throw new Error('Cannot obtain sessionId automatically: viewUrl or origUrl is missing.');
+        }
+
+        console.log(`Obtaining session from: ${viewUrl}`);
+        const response = await fetch(viewUrl, {
+            method: 'GET',
+            headers: {
+                'User-Agent': 'Mozilla/5.0',
+                'Accept': 'text/html,*/*',
+            },
+        });
+
+        if (!response.ok) {
+            throw new Error(`Failed to obtain session from ${viewUrl} (HTTP ${response.status})`);
+        }
+
+        let cookies = [];
+        if (typeof response.headers?.getSetCookie === 'function') {
+            cookies = response.headers.getSetCookie();
+        } else if (response.headers?.get) {
+            const raw = response.headers.get('set-cookie');
+            if (raw) cookies = [raw];
+        }
+
+        for (const cookie of cookies) {
+            const match = typeof cookie === 'string' && cookie.match(/ASP\.NET_SessionId=([^;]+)/i);
+            if (match) {
+                return match[1];
+            }
+        }
+
+        throw new Error(`ASP.NET_SessionId cookie not found in response from ${viewUrl}`);
     }
 
     getTerminCookie() {
@@ -36,6 +98,11 @@ class ScheduleDownloader {
     }
 
     async downloadSchedule() {
+        let activeSessionId = this.sessionId;
+        if (!activeSessionId || this.autoSession) {
+            activeSessionId = await this.fetchSessionId();
+        }
+
         const params = new URLSearchParams({
             dO: this.dateFrom,
             dD: this.dateTo,
@@ -48,7 +115,7 @@ class ScheduleDownloader {
         console.log(url);
 
         const cookieParts = [
-            `ASP.NET_SessionId=${this.sessionId}`,
+            `ASP.NET_SessionId=${activeSessionId}`,
             '.culture=c=pl|uic=pl',
         ];
         const termin = this.getTerminCookie();
@@ -83,6 +150,14 @@ class ScheduleDownloader {
         }
 
         const buffer = Buffer.from(await response.arrayBuffer());
+
+        // Detect if a manually configured session expired on the server (indicated by header-only response without event data).
+        const textPreview = buffer.toString('utf8');
+        if (!this.autoSession && textPreview.includes('Plan dla toku:') && !textPreview.includes('Data Zajec:')) {
+            console.warn('Configured sessionId returned empty plan (session likely expired). Fetching a fresh session...');
+            this.autoSession = true;
+            return this.downloadSchedule();
+        }
 
         fs.writeFileSync(this.outputPath, buffer);
 

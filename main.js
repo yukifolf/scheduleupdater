@@ -35,10 +35,12 @@ class ScheduleUpdater {
         this.outputPath = path.resolve(__dirname, options.outputPath || './tmp/harmonogram.csv');
         this.downloader = new ScheduleDownloader({
             sessionId: options.sessionId,
+            autoSession: options.autoSession,
             id: options.scheduleID,
             dateFrom: options.dateFrom,
             dateTo: options.dateTo,
             origUrl: options.url,
+            viewUrl: options.viewUrl,
             outputPath: this.outputPath,
         });
         this.calendar = new GoogleCalendar({

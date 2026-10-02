@@ -1,6 +1,6 @@
 {
   "scripts": {
-    "start": "nodemon main.js",
+    "start": "nodemon main.js 2>&1 | logger -t calendarupdater",
     "dev": "nodemon main.js",
     "test": "jest --runInBand"
   },

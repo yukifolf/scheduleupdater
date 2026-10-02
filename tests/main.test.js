@@ -173,4 +173,30 @@ describe('schedule update loop', () => {
         expect(() => new ScheduleUpdater({ ...options, groupFilters: 'IS-CP' }))
             .toThrow(/groupFilters/);
     });
+
+    test('runs successfully without sessionId by automatically obtaining a session', async () => {
+        const { sessionId, ...optionsWithoutSession } = options;
+        const autoUpdater = new ScheduleUpdater(optionsWithoutSession);
+        jest.spyOn(autoUpdater.calendar, 'init').mockImplementation(async () => {
+            autoUpdater.calendar.calendar = { events: api };
+            return autoUpdater.calendar;
+        });
+
+        fetchMock
+            .mockResolvedValueOnce({
+                ok: true,
+                status: 200,
+                headers: {
+                    getSetCookie: () => ['ASP.NET_SessionId=auto-main-session; path=/'],
+                    get: () => 'ASP.NET_SessionId=auto-main-session',
+                },
+            })
+            .mockResolvedValueOnce(response());
+
+        const plan = await autoUpdater.runOnce();
+        expect(plan.create).toHaveLength(1);
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(fetchMock.mock.calls[0][0]).toBe('https://schedule.example/Plany/PlanyTokow/1088');
+        expect(fetchMock.mock.calls[1][1].headers.Cookie).toContain('ASP.NET_SessionId=auto-main-session');
+    });
 });
