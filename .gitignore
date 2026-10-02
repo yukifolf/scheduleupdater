@@ -151,3 +151,5 @@ tmp/*
 config/default.json
 config/production.json
 config/credentials.json
+config/token.json
+token.json

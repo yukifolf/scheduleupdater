@@ -10,6 +10,8 @@ class GoogleCalendar {
         calendarId = 'primary', timeMin, timeMax,
         timeZone = 'Europe/Warsaw', sourceId = 'scheduleupdater',
         credentialsPath = path.join(__dirname, 'credentials.json'),
+        tokenPath = path.join(path.dirname(credentialsPath), 'token.json'),
+        planName,
     } = {}) {
         if (typeof sourceId !== 'string' || !sourceId.trim() || sourceId.length > 1024) {
             throw new Error('sourceId must be a nonempty string of at most 1024 characters.');
@@ -18,6 +20,8 @@ class GoogleCalendar {
         this.timeZone = timeZone;
         this.sourceId = sourceId;
         this.credentialsPath = credentialsPath;
+        this.tokenPath = tokenPath;
+        this.planName = planName;
         this.auth = null;
         this.calendar = null;
         this.formatter = new Intl.DateTimeFormat('en-GB', {
@@ -60,9 +64,56 @@ class GoogleCalendar {
     }
 
     async init() {
+        const fs = require('fs');
         const { google } = require('googleapis');
+
+        const saveTokens = (tokens) => {
+            try {
+                let existing = {};
+                if (fs.existsSync(this.tokenPath)) {
+                    try {
+                        existing = JSON.parse(fs.readFileSync(this.tokenPath, 'utf8'));
+                    } catch {}
+                }
+                const merged = { ...existing, ...tokens };
+                fs.mkdirSync(path.dirname(this.tokenPath), { recursive: true });
+                fs.writeFileSync(this.tokenPath, JSON.stringify(merged, null, 2));
+            } catch (err) {
+                console.error(`Failed to save token to ${this.tokenPath}:`, err);
+            }
+        };
+
+        if (fs.existsSync(this.tokenPath)) {
+            try {
+                const tokenData = JSON.parse(fs.readFileSync(this.tokenPath, 'utf8'));
+                if (tokenData && (tokenData.access_token || tokenData.refresh_token)) {
+                    const credentials = JSON.parse(fs.readFileSync(this.credentialsPath, 'utf8'));
+                    const keys = credentials.installed || credentials.web;
+                    if (!keys) {
+                        throw new Error('Credentials file must define an "installed" or "web" client.');
+                    }
+                    const client = new google.auth.OAuth2(
+                        keys.client_id,
+                        keys.client_secret,
+                        keys.redirect_uris?.[0] || 'http://localhost'
+                    );
+                    client.setCredentials(tokenData);
+                    client.on('tokens', (tokens) => saveTokens(tokens));
+                    this.auth = client;
+                    this.calendar = google.calendar({ version: 'v3', auth: this.auth });
+                    return this;
+                }
+            } catch (error) {
+                console.warn(`Could not load saved token from ${this.tokenPath}: ${error.message}. Re-authenticating.`);
+            }
+        }
+
         const { authenticate } = require('@google-cloud/local-auth');
         this.auth = await authenticate({ keyfilePath: this.credentialsPath, scopes: SCOPES });
+        if (this.auth?.credentials) {
+            saveTokens(this.auth.credentials);
+        }
+        this.auth.on('tokens', (tokens) => saveTokens(tokens));
         this.calendar = google.calendar({ version: 'v3', auth: this.auth });
         return this;
     }
@@ -91,12 +142,44 @@ class GoogleCalendar {
         return hash(JSON.stringify([event.subject, event.group, this.toTimestamp(event.start)]));
     }
 
+    formatDateWithWeekday(date) {
+        if (!date) return '';
+        try {
+            const dateObj = new Date(`${date}T12:00:00Z`);
+            const weekday = dateObj.toLocaleDateString('pl-PL', { weekday: 'long' });
+            return `${date.replace(/-/g, '.')} ${weekday}`;
+        } catch {
+            return date;
+        }
+    }
+
+    formatDescription(event) {
+        const lines = [];
+        const plan = event.plan || this.planName;
+        if (plan) {
+            lines.push(plan.startsWith('Plan dla toku:') ? plan : `Plan dla toku: ${plan}`);
+            lines.push('');
+        }
+        const dateStr = event.rawDate || this.formatDateWithWeekday(event.date);
+        lines.push(` Data zajęć: ${dateStr}`);
+        lines.push(` Czas od: ${event.timeFrom || ''}`);
+        lines.push(` Czas do: ${event.timeTo || ''}`);
+        lines.push(` Liczba godzin: ${event.duration || ''}`);
+        lines.push(` Przedmiot: ${event.subject || ''}`);
+        lines.push(` Forma zajęć: ${event.form || ''}`);
+        lines.push(` Grupy: ${event.group || ''}`);
+        lines.push(` Sala: ${event.room || ''}`);
+        lines.push(` Prowadzący: ${event.teacher || ''}`);
+        lines.push(` Forma zaliczenia: ${event.examType || ''}`);
+        lines.push(` Uwagi: ${event.notes || ''}`);
+        return lines.join('\n');
+    }
+
     toGoogleEvent(event) {
         return {
             summary: event.subject,
             location: event.room || '',
-            // Preserve every parser field, including duration, group, examType and notes.
-            description: JSON.stringify(event, null, 2),
+            description: this.formatDescription(event),
             start: { dateTime: new Date(this.toTimestamp(event.start)).toISOString(), timeZone: this.timeZone },
             end: { dateTime: new Date(this.toTimestamp(event.end)).toISOString(), timeZone: this.timeZone },
             extendedProperties: { private: {
@@ -113,14 +196,21 @@ class GoogleCalendar {
         const end = this.toTimestamp(event.end.dateTime);
         // Google lists overlapping events; manage only events wholly inside the range.
         if (start < this.rangeStart || start >= this.rangeEnd || end > this.rangeEnd) return null;
-        let data;
-        try { data = JSON.parse(event.description); } catch { /* Manual description. */ }
+        let groupHash = event.extendedProperties?.private?.scheduleGroup || null;
+        if (!groupHash && event.description) {
+            try {
+                const data = JSON.parse(event.description);
+                if (typeof data?.group === 'string') groupHash = hash(data.group);
+            } catch {
+                const match = event.description.match(/^\s*Grupy:\s*(.+)$/m);
+                if (match) groupHash = hash(match[1].trim());
+            }
+        }
         const owner = event.extendedProperties?.private?.scheduleSource;
         return {
             event, start, end, date: this.localDateTime(start).slice(0, 10),
             subject: event.summary || '',
-            group: event.extendedProperties?.private?.scheduleGroup
-                || (typeof data?.group === 'string' ? hash(data.group) : null),
+            group: groupHash,
             managed: this.isManaged(event),
             adoptable: !owner && !event.recurringEventId,
         };

@@ -70,7 +70,7 @@ describe('ScheduleDownloader', () => {
         expect(request).toEqual({
             method: 'GET',
             headers: {
-                Cookie: 'ASP.NET_SessionId=test-session; .culture=c=pl|uic=pl',
+                Cookie: 'ASP.NET_SessionId=test-session; .culture=c=pl|uic=pl; RadioList_TerminT=2026,10,1%5C2027,2,21%5C3',
                 Referer: 'https://schedule.example/Plany/WydrukTokuCsv/1088',
                 'User-Agent': 'Mozilla/5.0',
                 Accept: '*/*',

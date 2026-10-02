@@ -76,7 +76,7 @@ describe('schedule update loop', () => {
         const first = await updater.runOnce();
         expect(first.create).toHaveLength(1);
         expect(records[0].summary).toBe('First');
-        expect(JSON.parse(records[0].description).group).toBe('IS-CP');
+        expect(records[0].description).toContain('Grupy: IS-CP');
         expect(fs.existsSync(options.outputPath)).toBe(true);
 
         const second = await updater.runOnce();

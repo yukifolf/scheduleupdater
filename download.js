@@ -19,6 +19,22 @@ class ScheduleDownloader {
         this.retryCount = 0;
     }
 
+    getTerminCookie() {
+        if (!this.dateFrom || !this.dateTo) return '';
+        const matchFrom = typeof this.dateFrom === 'string' && this.dateFrom.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+        const matchTo = typeof this.dateTo === 'string' && this.dateTo.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+        if (matchFrom && matchTo) {
+            const m1 = parseInt(matchFrom[1], 10);
+            const d1 = parseInt(matchFrom[2], 10);
+            const y1 = parseInt(matchFrom[3], 10);
+            const m2 = parseInt(matchTo[1], 10);
+            const d2 = parseInt(matchTo[2], 10);
+            const y2 = parseInt(matchTo[3], 10);
+            return `RadioList_TerminT=${y1},${m1},${d1}%5C${y2},${m2},${d2}%5C3`;
+        }
+        return '';
+    }
+
     async downloadSchedule() {
         const params = new URLSearchParams({
             dO: this.dateFrom,
@@ -31,10 +47,17 @@ class ScheduleDownloader {
         console.log('Downloading:');
         console.log(url);
 
+        const cookieParts = [
+            `ASP.NET_SessionId=${this.sessionId}`,
+            '.culture=c=pl|uic=pl',
+        ];
+        const termin = this.getTerminCookie();
+        if (termin) cookieParts.push(termin);
+
         const response = await fetch(url, {
             method: 'GET',
             headers: {
-                'Cookie': `ASP.NET_SessionId=${this.sessionId}; .culture=c=pl|uic=pl`,
+                'Cookie': cookieParts.join('; '),
                 'Referer': `${this.origUrl}${this.id}`,
                 'User-Agent': 'Mozilla/5.0',
                 'Accept': '*/*',

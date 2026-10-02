@@ -16,8 +16,15 @@ class CSVParser {
 
         const events = [];
         let currentDate = null;
+        let planTitle = null;
 
         for (const line of lines) {
+            if (line.startsWith('Plan dla toku:')) {
+                planTitle = line.split(';')[0].trim();
+                this.planTitle = planTitle;
+                continue;
+            }
+
             if (line.startsWith('Data Zajec:')) {
                 const match = line.match(/Data Zajec:\s*(\d{4}\.\d{2}\.\d{2})/);
 
@@ -48,7 +55,7 @@ class CSVParser {
                 continue;
             }
 
-            events.push({
+            const event = {
                 date: currentDate,
                 start: `${currentDate}T${this.normalizeTime(timeFrom)}:00`,
                 end: `${currentDate}T${this.normalizeTime(timeTo)}:00`,
@@ -60,7 +67,9 @@ class CSVParser {
                 room: room?.trim() || '',
                 examType: examType?.trim() || '',
                 notes: notes?.trim() || ''
-            });
+            };
+            if (planTitle) event.plan = planTitle;
+            events.push(event);
         }
 
         this.data = events;

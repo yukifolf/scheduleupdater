@@ -47,6 +47,9 @@ class ScheduleUpdater {
             sourceId: options.sourceId,
             credentialsPath: options.credentialsPath
                 ? path.resolve(__dirname, options.credentialsPath) : undefined,
+            tokenPath: options.tokenPath
+                ? path.resolve(__dirname, options.tokenPath) : undefined,
+            planName: options.planName,
             timeMin: dateFrom,
             timeMax,
         });

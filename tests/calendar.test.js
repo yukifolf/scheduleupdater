@@ -52,7 +52,7 @@ test('creates all sample events, preserves every field, and is idempotent across
     const first = await calendar.syncEvents(sample);
     expect(first.create.length).toBe(sample.length);
     records.forEach((event, index) => {
-        expect(JSON.parse(event.description)).toEqual(sample[index]);
+        expect(event.description).toBe(calendar.formatDescription(sample[index]));
         expect(event.location).toBe(sample[index].room);
     });
     calls.length = 0;
@@ -75,7 +75,7 @@ test('updates room, end time and metadata while retaining unrelated properties',
     expect(plan.update.length).toBe(1);
     expect(plan.update[0].eventId).toBe('original');
     expect(plan.create.length + plan.delete.length).toBe(0);
-    expect(JSON.parse(records[0].description)).toEqual(changed);
+    expect(records[0].description).toBe(calendar.formatDescription(changed));
     expect(records[0].extendedProperties.private.otherApp).toBe('keep');
     expect(records[0].extendedProperties.shared).toEqual({ sharedData: 'keep' });
     expect(records[0].attendees).toEqual(existing.attendees);
@@ -164,4 +164,106 @@ test('does not delete anything when a create fails', async () => {
     await expect(calendar.syncEvents([sample[1]])).rejects.toThrow(/Insert failed/);
     expect(records.length).toBe(1);
     expect(calls.every(([method]) => method !== 'delete')).toBe(true);
+});
+
+describe('GoogleCalendar authentication and token persistence', () => {
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+    const { EventEmitter } = require('events');
+
+    let tempDir;
+    let credsPath;
+    let tokenPath;
+
+    beforeEach(() => {
+        tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cal-auth-test-'));
+        credsPath = path.join(tempDir, 'credentials.json');
+        tokenPath = path.join(tempDir, 'token.json');
+        fs.writeFileSync(credsPath, JSON.stringify({
+            installed: {
+                client_id: 'test-client-id',
+                client_secret: 'test-secret',
+                redirect_uris: ['http://localhost'],
+            },
+        }));
+    });
+
+    afterEach(() => {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+        jest.restoreAllMocks();
+    });
+
+    test('defaults tokenPath relative to credentialsPath', () => {
+        const cal = new GoogleCalendar({ ...options, credentialsPath: credsPath });
+        expect(cal.tokenPath).toBe(path.join(tempDir, 'token.json'));
+    });
+
+    test('loads saved tokens from disk without re-authenticating', async () => {
+        const savedTokens = { access_token: 'valid-access', refresh_token: 'valid-refresh' };
+        fs.writeFileSync(tokenPath, JSON.stringify(savedTokens));
+
+        const cal = new GoogleCalendar({ ...options, credentialsPath: credsPath, tokenPath });
+        await cal.init();
+
+        expect(cal.auth).toBeDefined();
+        expect(cal.auth.credentials).toEqual(expect.objectContaining(savedTokens));
+        expect(cal.calendar).toBeDefined();
+    });
+
+    test('authenticates and saves tokens to disk when token file is absent', async () => {
+        const localAuth = require('@google-cloud/local-auth');
+        const mockAuth = new EventEmitter();
+        mockAuth.credentials = { access_token: 'new-access', refresh_token: 'new-refresh' };
+        const authSpy = jest.spyOn(localAuth, 'authenticate').mockResolvedValue(mockAuth);
+
+        const cal = new GoogleCalendar({ ...options, credentialsPath: credsPath, tokenPath });
+        await cal.init();
+
+        expect(authSpy).toHaveBeenCalledWith({
+            keyfilePath: credsPath,
+            scopes: ['https://www.googleapis.com/auth/calendar'],
+        });
+        expect(fs.existsSync(tokenPath)).toBe(true);
+        expect(JSON.parse(fs.readFileSync(tokenPath, 'utf8'))).toEqual(mockAuth.credentials);
+
+        mockAuth.emit('tokens', { access_token: 'refreshed-access' });
+        const updated = JSON.parse(fs.readFileSync(tokenPath, 'utf8'));
+        expect(updated.access_token).toBe('refreshed-access');
+        expect(updated.refresh_token).toBe('new-refresh');
+    });
+
+    test('formats description matching the human-readable template', () => {
+        const cal = new GoogleCalendar(options);
+        const event = {
+            plan: 'Plan dla toku: IS/WSEI N mgr inż. 1.5 2025/2026 lato',
+            date: '2026-10-03',
+            timeFrom: '16:20',
+            timeTo: '17:50',
+            duration: '2h00m',
+            subject: 'Język obcy dla informatyków',
+            form: '1',
+            group: 'Cw',
+            room: 'F Zajęcia zdalne na Teams',
+            teacher: 'mgr Katarzyna Szumińska',
+            examType: 'Egzamin',
+            notes: '',
+        };
+        const desc = cal.formatDescription(event);
+        expect(desc).toBe([
+            'Plan dla toku: IS/WSEI N mgr inż. 1.5 2025/2026 lato',
+            '',
+            ' Data zajęć: 2026.10.03 sobota',
+            ' Czas od: 16:20',
+            ' Czas do: 17:50',
+            ' Liczba godzin: 2h00m',
+            ' Przedmiot: Język obcy dla informatyków',
+            ' Forma zajęć: 1',
+            ' Grupy: Cw',
+            ' Sala: F Zajęcia zdalne na Teams',
+            ' Prowadzący: mgr Katarzyna Szumińska',
+            ' Forma zaliczenia: Egzamin',
+            ' Uwagi: ',
+        ].join('\n'));
+    });
 });
