@@ -1,0 +1,10 @@
+services:
+  scheduleupdater:
+    build: .
+    container_name: scheduleupdater
+    restart: unless-stopped
+    volumes:
+      - ./config:/app/config
+      - ./tmp:/app/tmp
+    environment:
+      - TZ=Europe/Warsaw

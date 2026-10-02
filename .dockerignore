@@ -1,0 +1,18 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+tmp
+tests
+test
+*.md
+.vscode
+.cache
+coverage
+
+# Sensitive configuration and tokens (mount via volume instead)
+config/default.json
+config/production.json
+config/credentials.json
+config/token.json
+token.json
