@@ -148,6 +148,6 @@ vite.config.ts.timestamp-*
 # Turbo Repo
 .turbo
 tmp/*
-config/defaults.json
+config/default.json
 config/production.json
 config/credentials.json
