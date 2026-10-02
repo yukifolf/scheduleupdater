@@ -51,9 +51,14 @@ class ScheduleDownloader {
         }
 
         console.log(`Obtaining session from: ${viewUrl}`);
+        const cookieParts = ['.culture=c=pl|uic=pl'];
+        const termin = this.getTerminCookie();
+        if (termin) cookieParts.push(termin);
+
         const response = await fetch(viewUrl, {
             method: 'GET',
             headers: {
+                'Cookie': cookieParts.join('; '),
                 'User-Agent': 'Mozilla/5.0',
                 'Accept': 'text/html,*/*',
             },

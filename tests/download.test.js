@@ -267,6 +267,8 @@ describe('ScheduleDownloader', () => {
 
             expect(fetchMock).toHaveBeenCalledTimes(2);
             expect(fetchMock.mock.calls[0][0]).toBe('https://schedule.example/Plany/PlanyTokow/1088');
+            expect(fetchMock.mock.calls[0][1].headers.Cookie).toContain('RadioList_TerminT=2026,10,1%5C2027,2,21%5C3');
+            expect(fetchMock.mock.calls[0][1].headers.Cookie).toContain('.culture=c=pl|uic=pl');
             expect(fetchMock.mock.calls[1][1].headers.Cookie).toContain('ASP.NET_SessionId=derived-session-456');
         });
 
